@@ -81,19 +81,50 @@ userns_available() {
   unshare --user --map-root-user true 2>/dev/null
 }
 
-fix_sandbox_hint() {
-  local sb="node_modules/electron/dist/chrome-sandbox"
+# 判断 setuid 沙箱是否**可能**生效：需要 4755 + root 属主，
+# 且所在文件系统不能以 nosuid 挂载（nosuid 会让内核忽略 setuid 位）。
+setuid_sandbox_usable() {
+  local sb="$1"
+  [[ -u "$sb" ]] || return 1
+  [[ "$(stat -c %U "$sb" 2>/dev/null)" == "root" ]] || return 1
+  local opts
+  opts="$(findmnt -n -o OPTIONS -T "$sb" 2>/dev/null || true)"
+  [[ "$opts" != *nosuid* ]]
+}
+
+# 打印精确的失败原因与可选方案（区分 nosuid 与 userns 两种情况）
+explain_sandbox_failure() {
+  local sb="$1"
+  local opts
+  opts="$(findmnt -n -o OPTIONS -T "$sb" 2>/dev/null || true)"
+
   echo "" >&2
-  echo "当前系统禁用了非特权 user namespace，Electron 需要 setuid 沙箱。" >&2
-  echo "请二选一：" >&2
-  echo "" >&2
-  echo "  【推荐】赋予 chrome-sandbox 正确的属主与权限：" >&2
-  echo "      sudo chown root:root $sb" >&2
-  echo "      sudo chmod 4755 $sb" >&2
-  echo "" >&2
-  echo "  【临时】本次以 --no-sandbox 运行（关闭渲染进程沙箱）：" >&2
-  echo "      ./run.sh --no-sandbox" >&2
-  echo "      或：ELECTRON_DISABLE_SANDBOX=1 ./run.sh" >&2
+  if [[ "$opts" == *nosuid* ]]; then
+    # 这是最容易踩坑的情况：用户按提示 chmod 4755 后仍然失败，
+    # 因为 nosuid 挂载让 setuid 位形同虚设。
+    echo "无法启用 Electron 沙箱，原因有二（本机同时命中）：" >&2
+    echo "  1) 项目所在文件系统以 nosuid 挂载：$(findmnt -n -o TARGET -T "$sb" 2>/dev/null)" >&2
+    echo "     内核会忽略 setuid 位，因此 chmod 4755 无效。" >&2
+    echo "  2) 系统禁用了非特权 user namespace（Ubuntu 24.04+ 的 AppArmor 策略）。" >&2
+    echo "" >&2
+    echo "可选方案：" >&2
+    echo "  【A】以 --no-sandbox 运行（本控制台只加载本地资源，可接受）" >&2
+    echo "       ./run.sh --no-sandbox" >&2
+    echo "  【B】为 Electron 二进制添加 AppArmor 白名单（保留 userns 沙箱，需 sudo）" >&2
+    echo "       见 README「Linux 沙箱问题」一节" >&2
+    echo "  【C】安装发行包（deb 装到 /opt，该分区支持 setuid）" >&2
+    echo "       sudo dpkg -i dist/remote-hub_*_amd64.deb" >&2
+  else
+    echo "当前系统禁用了非特权 user namespace，Electron 需要 setuid 沙箱。" >&2
+    echo "请二选一：" >&2
+    echo "" >&2
+    echo "  【推荐】赋予 chrome-sandbox 正确的属主与权限：" >&2
+    echo "      sudo chown root:root $sb" >&2
+    echo "      sudo chmod 4755 $sb" >&2
+    echo "" >&2
+    echo "  【临时】本次以 --no-sandbox 运行：" >&2
+    echo "      ./run.sh --no-sandbox" >&2
+  fi
   echo "" >&2
 }
 
@@ -110,7 +141,7 @@ launch_console() {
     exit 1
   fi
 
-  # 显式传入 --no-sandbox，或设置 ELECTRON_DISABLE_SANDBOX=1 时直接放行
+  local sb="node_modules/electron/dist/chrome-sandbox"
   local args=("$@")
   local force_no_sandbox=0
   for a in "${args[@]}"; do
@@ -118,14 +149,17 @@ launch_console() {
   done
   [[ "${ELECTRON_DISABLE_SANDBOX:-}" =~ ^(1|true|yes|on)$ ]] && force_no_sandbox=1
 
+  # 只有 userns 不可用时才需要关心 setuid 沙箱
   if [[ $force_no_sandbox -eq 0 ]] && ! userns_available; then
-    # userns 不可用：先看 setuid 是否已正确配置，正确就正常启动
-    local sb="node_modules/electron/dist/chrome-sandbox"
-    if [[ -u "$sb" && "$(stat -c %U "$sb" 2>/dev/null)" == "root" ]]; then
-      : # setuid 已就绪，交给 Electron 走 setuid 沙箱
+    if setuid_sandbox_usable "$sb"; then
+      : # setuid 沙箱可用，交给 Electron 自行选择
     else
-      fix_sandbox_hint
-      exit 1
+      # 两条沙箱路径都不可用 —— 自动降级，保证 ./run.sh 开箱可用，
+      # 同时把原因与「如何恢复沙箱」讲清楚。
+      explain_sandbox_failure "$sb"
+      echo "→ 已自动改用 --no-sandbox 启动（功能不受影响）。" >&2
+      echo "" >&2
+      args+=("--no-sandbox")
     fi
   fi
 
@@ -147,6 +181,10 @@ case "${1:-}" in
     launch_console ;;
   --console)
     shift
+    launch_console "$@" ;;
+  # Electron / Chromium 开关：原样透传给控制台。若不单列，会落到下面的服务端
+  # 分支，变成 node server.mjs --no-sandbox，报「Cannot find module」。
+  --no-sandbox|--disable-gpu|--enable-logging|--inspect|--inspect=*|--inspect-brk|--remote-debugging-port=*)
     launch_console "$@" ;;
   *) exec node "$SERVICE" "$@" ;;
 esac

@@ -96,26 +96,62 @@ but is not configured correctly. ... You need to make sure that
 .../node_modules/electron/dist/chrome-sandbox is owned by root and has mode 4755.
 ```
 
-**原因**：Electron 在 Linux 有两条沙箱路径 —— user namespace 沙箱（现代默认，无需 root）
-与 setuid 沙箱（要求 `chrome-sandbox` 属 root 且权限 4755）。当系统禁用非特权
-user namespace（Ubuntu 24.04+ 的 AppArmor 默认策略、受限容器等）时，Electron 退回
-setuid 路径；而 npm 装的 `chrome-sandbox` 属当前用户、没有 setuid 位，于是中止。
+**原因**：Electron 在 Linux 有两条沙箱路径，两条都可能被系统配置掐断。
 
-`./run.sh` 已内置检测，会给出明确指引。两条解决方式：
+**路径一：user namespace 沙箱**（现代默认，不需要 root）
+Ubuntu 24.04+ 的 AppArmor 默认策略限制了非特权 user namespace
+（`kernel.apparmor_restrict_unprivileged_userns=1`），普通程序 `unshare` 会返回
+`Operation not permitted`。官方客户端（如 ZCode）随包提供 AppArmor profile 白名单，
+源码运行则没有，于是这条路径走不通。
+
+**路径二：setuid 沙箱**（要求 `chrome-sandbox` 属 root 且权限 4755）
+两个门槛，**必须同时满足**：
 
 ```bash
-# 推荐：赋予 chrome-sandbox 正确的属主与权限（只需一次）
+# ① npm 装的 chrome-sandbox 属当前用户且无 setuid 位
 sudo chown root:root node_modules/electron/dist/chrome-sandbox
 sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
 
-# 或临时关闭渲染进程沙箱（本控制台只加载本地打包资源，可接受）
-./run.sh --no-sandbox
+# ② 但！所在文件系统若以 nosuid 挂载，内核会直接忽略 setuid 位，chmod 无效
+findmnt -n -o TARGET,OPTIONS -T node_modules/electron/dist/chrome-sandbox
+# 若输出里带 nosuid（如 /home 挂在独立数据盘上），这条路永远走不通 —— 换方案
+```
+
+**`./run.sh` 已内置完整检测**：先探测 user namespace，不可用再检查 setuid 位
+（含 nosuid 挂载检查）；两条路都不通时打印精确原因，并**自动降级为 `--no-sandbox`
+启动**，保证开箱可用。想手工控制时：
+
+```bash
+./run.sh --no-sandbox          # 显式关闭渲染进程沙箱
 ELECTRON_DISABLE_SANDBOX=1 ./run.sh
 ```
 
-> **安装包不受影响**：deb 的 `postinst` 脚本会在安装时检测 user namespace 是否可用，
-> 不可用则自动 `chmod 4755`（安装时以 root 执行，属主天然是 root）。
-> 因此 `sudo dpkg -i` 安装后直接可用，无需手工处理。
+**想要恢复完整沙箱**（三选一，按推荐度排序）：
+
+```bash
+# A. 安装发行包 —— 装在 /opt（根文件系统，不是 nosuid），postinst 自动处理 setuid 位
+sudo dpkg -i dist/remote-hub_*_amd64.deb
+
+# B. 给 Electron 二进制加 AppArmor 白名单，恢复 user namespace 沙箱（源码运行）
+sudo tee /etc/apparmor.d/remote-hub-electron >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+profile "remote-hub-electron" "$PWD/node_modules/electron/dist/electron" flags=(unconfined) {
+  userns,
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/remote-hub-electron
+
+# C. 把项目放到根文件系统（如 ~/remote-hub 而非独立挂载的数据盘），再做 setuid 方式
+```
+
+> **安全说明**：`--no-sandbox` 关闭的是渲染进程沙箱。本控制台只加载本地打包的
+> HTML/JS，不访问任何远程内容，攻击面极小，因此该降级是可接受的；但只要上面的
+> 方案 A/B 可行，仍建议恢复完整沙箱。
+
+> **安装包不受影响**：deb 的 `postinst` 会在安装时检测 user namespace，不可用则
+> 自动 `chmod 4755`（安装以 root 执行，属主天然是 root），且 `/opt` 在根文件系统上
+> 不受 nosuid 影响。`sudo dpkg -i` 后直接可用，无需手工处理。
 
 ### 源码运行的依赖
 
