@@ -86,6 +86,37 @@ npm run dist:all        # 同时产出 deb 与 portable exe
 > 交叉构建说明：在 Linux 上即可产出 Windows exe，无需 wine
 > （electron-builder 自带 Linux 版 NSIS 工具链）。
 
+### Linux 沙箱问题（源码运行时可能遇到）
+
+从源码运行 Electron 时，部分系统会报：
+
+```
+FATAL:setuid_sandbox_host.cc(163)] The SUID sandbox helper binary was found,
+but is not configured correctly. ... You need to make sure that
+.../node_modules/electron/dist/chrome-sandbox is owned by root and has mode 4755.
+```
+
+**原因**：Electron 在 Linux 有两条沙箱路径 —— user namespace 沙箱（现代默认，无需 root）
+与 setuid 沙箱（要求 `chrome-sandbox` 属 root 且权限 4755）。当系统禁用非特权
+user namespace（Ubuntu 24.04+ 的 AppArmor 默认策略、受限容器等）时，Electron 退回
+setuid 路径；而 npm 装的 `chrome-sandbox` 属当前用户、没有 setuid 位，于是中止。
+
+`./run.sh` 已内置检测，会给出明确指引。两条解决方式：
+
+```bash
+# 推荐：赋予 chrome-sandbox 正确的属主与权限（只需一次）
+sudo chown root:root node_modules/electron/dist/chrome-sandbox
+sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+
+# 或临时关闭渲染进程沙箱（本控制台只加载本地打包资源，可接受）
+./run.sh --no-sandbox
+ELECTRON_DISABLE_SANDBOX=1 ./run.sh
+```
+
+> **安装包不受影响**：deb 的 `postinst` 脚本会在安装时检测 user namespace 是否可用，
+> 不可用则自动 `chmod 4755`（安装时以 root 执行，属主天然是 root）。
+> 因此 `sudo dpkg -i` 安装后直接可用，无需手工处理。
+
 ### 源码运行的依赖
 
 只有**从源码运行**时才需要以下组件；使用安装包则完全不需要。
