@@ -83,6 +83,8 @@ function renderStatus(st) {
 
   el.statusText.textContent = running ? `运行中　pid ${st.pid}` : '未运行';
   el.closeHint.textContent = st.closeHint;
+  // 圆角只对透明窗口有意义：不透明的窗口画圆角只会在四角露出窗口底色
+  document.body.classList.toggle('rounded', st.rounded === true);
   el.urlText.textContent = running ? computeUrl() : '(服务未运行)';
 
   // 启动/停止互斥；退出按钮文案随服务状态切换

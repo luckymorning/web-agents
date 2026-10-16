@@ -10,6 +10,9 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!-- 圆角窗口需要一层容器来画背景：html/body 的背景会被提升到画布，
+         而画布铺满整个窗口且不受 border-radius 约束，圆角会被填成直角 -->
+    <div class="shell">
     <!-- 顶栏 -->
     <header class="topbar">
       <div class="brand">远程控制网关</div>
@@ -79,6 +82,7 @@
         <pre class="log" id="log"></pre>
       </section>
     </main>
+    </div>
 
     <script src="app.js"></script>
   </body>

@@ -17,6 +17,13 @@ const netif = require('./netif');
 
 const IS_WINDOWS = process.platform === 'win32';
 
+// 无边框窗口的圆角在 Linux 上没有系统支持（Windows 11 / macOS 由系统绘制），
+// 只能用「透明窗口 + CSS border-radius」裁出来。透明窗口在 Windows 上会禁用
+// 拖边缩放，所以只在 Linux 启用；设 REMOTE_HUB_OPAQUE_WINDOW=1 可强制关闭，
+// 便于在无合成器的桌面上排查「透明区域被画成黑色」之类的问题。
+const TRANSPARENT_WINDOW =
+  process.env.REMOTE_HUB_OPAQUE_WINDOW === '1' ? false : process.platform === 'linux';
+
 // ---------------------------------------------------------------- 路径
 //
 // 打包后代码在 resources/app.asar 内，而服务端需要作为独立进程运行，
@@ -142,6 +149,8 @@ function currentStatus() {
       : '点「退出」关闭程序',
     // 托盘不可用时界面需要改文案 —— 否则「最小化」是个按了没反应（或收不回来）的按钮
     trayAvailable: Boolean(tray),
+    // 界面据此决定是否画圆角：不透明的窗口上画圆角只会露出窗口底色，像假圆角
+    rounded: TRANSPARENT_WINDOW,
   };
 }
 
@@ -332,7 +341,9 @@ function createWindow() {
     minWidth: 700,
     minHeight: 560,
     title: '远程控制网关 · 控制台',
-    backgroundColor: '#0f1115',
+    // 透明窗口下窗口本身不能有底色，否则四角透不出桌面
+    transparent: TRANSPARENT_WINDOW,
+    backgroundColor: TRANSPARENT_WINDOW ? '#00000000' : '#0f1115',
     autoHideMenuBar: true,
     // 隐藏系统默认窗口控制（标题栏的最小化/最大化/关闭）。
     // 窗口仍可拖动：顶栏在 CSS 里设为 -webkit-app-region: drag；
