@@ -1,0 +1,22 @@
+# 运行时配置：包含访问令牌等本机私有信息，不纳入版本控制
+console-config.json
+
+# 运行时产物
+*.log
+*.pid
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

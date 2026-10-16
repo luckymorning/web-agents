@@ -1,0 +1,16 @@
+{
+  "name": "remote-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "ZCode + Codex 融合的 Web 远程控制网关（零依赖）",
+  "bin": {
+    "remote-hub": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
