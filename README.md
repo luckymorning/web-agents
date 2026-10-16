@@ -60,23 +60,43 @@ run.bat stop            :: 停止服务
 run.bat status          :: 查看状态
 run.bat start           :: 后台启动服务
 run.bat --server        :: 前台运行服务（调试）
-
-:: 首次使用建议先自检
-python console\selftest_windows.py
 ```
 
-### 平台依赖
+### 安装包（推荐）
 
-| 组件 | Linux | Windows |
+提供两个**完全独立**的安装包 —— 内置 Node 运行时，装完或双击即用，
+不需要预先安装 Node.js、Python 或任何其它组件：
+
+| 平台 | 产物 | 使用方式 |
 |---|---|---|
-| Node.js | 必须 | 必须 |
-| Python 3 + tkinter | 控制台需要 | 控制台需要（官方安装包自带） |
-| 托盘 | `ubuntu-appindicators` 扩展（GNOME） | 系统自带（explorer.exe） |
-| Pillow | 可选，缺省用系统图标 | 可选，缺省用系统图标 |
+| Linux | `remote-hub_<版本>_amd64.deb` | `sudo dpkg -i` 安装，或双击用软件中心安装；之后从应用菜单启动 |
+| Windows | `remote-hub-<版本>-portable.exe` | 双击直接运行（portable，不写注册表） |
 
-Windows 首次使用建议先跑 `python console\selftest_windows.py`，它会逐项检查
-tkinter / Win32 API / 托盘模块 / explorer / Node / codex 路径 / ZCode 凭据，
-并明确告诉你是哪一项阻塞。
+安装包的 `.desktop` 已设 `Terminal=false`，从应用菜单启动**不会弹出终端窗口**。
+安装路径为 `/opt/remote-hub/`（Linux）；用户配置写入用户数据目录，
+不污染安装目录。
+
+构建安装包（开发者）：
+
+```bash
+npm install
+npm run dist:all        # 同时产出 deb 与 portable exe
+```
+
+> 交叉构建说明：在 Linux 上即可产出 Windows exe，无需 wine
+> （electron-builder 自带 Linux 版 NSIS 工具链）。
+
+### 源码运行的依赖
+
+只有**从源码运行**时才需要以下组件；使用安装包则完全不需要。
+
+| 组件 | 说明 |
+|---|---|
+| Node.js >= 20 | 仅服务端（`node server.mjs`）；GUI 控制台用 Electron 的运行时 |
+| Electron | GUI 控制台需要，通过 `npm install` 安装到本地 `node_modules` |
+
+控制台与打包产物都不再依赖 Python / tkinter / PyGObject / Pillow
+（早期版本的控制台曾用 Python 实现，现已由 Electron 版本取代）。
 
 ## 桌面控制台
 
@@ -103,70 +123,43 @@ tkinter / Win32 API / 托盘模块 / explorer / Node / codex 路径 / ZCode 凭�
 
 ### 关闭按钮的行为
 
-由「后台运行」开关决定（**默认打开**）：
+不再由开关配置，而是**随服务状态自动决定**：
 
-| 开关 | 点窗口关闭按钮的效果 |
+| 服务状态 | 点窗口关闭按钮的效果 |
 |---|---|
-| 打开（默认） | 窗口**最小化到系统托盘**，服务继续运行 |
-| 关闭 | **停止服务并结束进程** |
+| 未运行 | **退出程序**（没有需要在后台保留的东西） |
+| 运行中 | **最小化到系统托盘**，服务继续运行（否则关窗就把服务带走了） |
 
-### 托盘菜单
+界面上有一行说明会随状态变化（「关闭窗口将退出程序」/「关闭窗口将最小化到托盘」），
+避免用户对「关掉窗口后服务还在跑」感到意外。
 
-窗口最小化到托盘后，托盘图标提供两个菜单项：
+> 早期版本这里是个「后台运行」复选框，语义混在"是否自动启动"和"关闭时是否最小化"
+> 之间；现已改为自动判断。控制台启动时也**不会自动拉起服务**，一律由用户点「启动」显式拉起。
 
-- **打开** —— 弹出控制台窗口（左键点图标效果相同）；
-- **退出** —— 停止服务，然后结束进程。
+### 托盘
 
-配置项存在 `console-config.json`，`server.js` 会读取它作为默认值，
-所以控制台改完端口/令牌后点「重启」即可生效（命令行参数优先级更高）。
+窗口最小化后，托盘图标提供：
 
-### 托盘实现说明
+- **打开控制台**（左键点图标效果相同）
+- **在浏览器中打开**（服务未运行时置灰）
+- **退出（停止服务）**
 
-托盘层按平台分为两个独立实现，由 `console/tray.py` 作为分发器选择，
-控制台只依赖统一接口（`register` / `wait_registered` / `set_tooltip` / `unregister`）：
+托盘用 Electron 原生 `Tray` API 实现，因此两个平台各自走系统标准机制：
 
-| 平台 | 模块 | 机制 |
-|---|---|---|
-| Linux | `console/tray_linux.py` | D-Bus StatusNotifierItem + com.canonical.dbusmenu |
-| Windows | `console/tray_win.py` | Shell_NotifyIcon + 隐藏消息窗口 + 弹出菜单 |
+| 平台 | 底层机制 |
+|---|---|
+| Linux | D-Bus StatusNotifierItem（由桌面 shell 渲染） |
+| Windows | Shell_NotifyIcon（通知区域） |
+| macOS | NSStatusItem（如后续支持） |
 
-#### 为什么 Linux 要自己实现
-
-- `gir1.2-ayatanaappindicator3` 常未安装，且安装需要管理员权限；
-- `Dbusmenu` 的 GI 绑定虽存在，但它内部用独立的 GDBus 连接导出菜单，
-  与 dbus-python 的 StatusNotifierItem 混用时同一 bus name 会被两条连接争抢，
-  实测直接触发 `object_path != NULL` 断言失败。
-
-所以统一走 Gio/GDBus，让图标与菜单落在同一条连接、同一个 bus name 下。
-**托盘依赖桌面环境提供 `org.kde.StatusNotifierWatcher`**（GNOME 上由
-`ubuntu-appindicators` 扩展提供）。
-
-#### 为什么 Windows 要显式声明 Win32 原型
-
-64 位 Windows 上 `HWND`/`HICON`/`HMENU` 是 64 位指针，而 ctypes 默认把返回值
-当 32 位 int 处理，**会截断句柄并导致崩溃**。因此 `tray_win.py` 为用到的全部
-27 个 Win32 函数显式设置了 `argtypes`/`restype`，这是该文件最重要的正确性保障。
-
-Windows 侧另外两个要点：
-- 托盘需要一个能收消息的窗口，这里用「消息专用窗口」（父窗口 `HWND_MESSAGE`），
-  不显示、不占任务栏；
-- 图标优先用 PIL 现场绘制并转成 HICON，失败则回退系统图标，保证托盘一定可见。
-
-托盘交互（两平台一致）：**左键**点图标直接打开窗口，**右键**出菜单
-（「打开」恢复窗口、「退出」停止服务并结束进程）。
-
-#### 托盘不可用时的降级
-
-控制台启动时会主动检测托盘可用性（Windows 视为始终可用）：
-
-- 可用 → 正常注册，「后台运行」开关可用；
-- 不可用 → 在界面日志里说明原因，并**在本次运行内临时禁用「后台运行」**
-  （避免窗口收起后无法恢复）；**不会覆盖你保存的偏好**，等托盘恢复后自动生效。
+托盘不可用时（例如 GNOME 未启用 `ubuntu-appindicators` 扩展）不影响主功能，
+只是无法最小化——此时关闭按钮会提示并询问是否停止服务并退出，而不是把窗口收进一个
+再也找不回来的地方。
 
 Linux 排查方法：
 
 ```bash
-# 宿主是否存在
+# 托盘宿主是否存在
 busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
   org.freedesktop.DBus NameHasOwner s org.kde.StatusNotifierWatcher
 
@@ -174,11 +167,32 @@ busctl --user call org.freedesktop.DBus /org/freedesktop/DBus \
 gnome-extensions info ubuntu-appindicators@ubuntu.com
 ```
 
-> 技术细节：托盘回调运行在各自的循环线程（Linux: GLib 主循环；
-> Windows: Win32 消息循环），而 tkinter 不是线程安全的 ——
-> 直接调用 `root.after()` 会死锁（在 Linux 上实测表现为 D-Bus 调用超时），
-> 所以两平台都通过线程安全队列把托盘事件投递给主线程处理。
+### 目录结构与配置位置
 
+```
+package.json           Electron 应用清单 + 打包配置（electron-builder）
+server.mjs             HTTP 服务、路由、SSE 总线（ESM，供 Electron 内置 Node 运行）
+lib/*.mjs              Codex 桥接 / ZCode 凭据 / 写入者锁探测
+public/                Web 前端（index.html / app.js / markdown.js / styles.css）
+desktop/main.js        Electron 主进程：窗口、托盘、服务进程管理
+desktop/preload.js     IPC 桥（contextIsolation，不暴露 Node）
+desktop/renderer/      控制台界面（HTML/CSS/JS）
+desktop/netif.js       网卡枚举（区分真实网卡与 VPN/隧道）
+build/                 应用图标（icon.png / icon.ico）
+run.sh / run.bat       源码运行入口（控制台 / 服务两种模式）
+```
+
+配置文件写入**用户数据目录**，不污染安装目录：
+
+| 平台 | 路径 |
+|---|---|
+| Linux | `~/.config/remote-hub/console-config.json` |
+| Windows | `%APPDATA%\remote-hub\console-config.json` |
+
+> 为什么服务端文件用 `.mjs` 后缀：Electron 以 `ELECTRON_RUN_AS_NODE=1` 运行时
+> **不读取 `package.json` 的 `type: module`**，直接跑 `.js` 会把 `import` 当语法错误。
+> `.mjs` 天然是 ES 模块，不依赖任何配置，从而同一份 `server.mjs` 既能被系统 Node
+> 运行（`node server.mjs`），也能被打包后的 Electron 内置 Node 运行。
 
 ## 两个 tab 的工作原理
 
@@ -548,38 +562,37 @@ relay 状态是读日志里**最后一条** `[web-remote-control]` 记录得来�
 ## 文件结构
 
 ```
-server.js              HTTP 服务、路由、SSE 总线
-console/console.py     桌面控制台（窗口、配置、跨平台进程管理）
-console/tray.py        托盘分发器（按平台选择实现）
-console/tray_linux.py  Linux 托盘（D-Bus StatusNotifierItem）
-console/tray_win.py    Windows 托盘（Shell_NotifyIcon，Win32 原型已声明）
-console/selftest_windows.py  Windows 环境自检
-lib/codex-bridge.js    Codex app-server 子进程管理、JSON-RPC、reader/driver 路由
-lib/zcode-creds.js     ZCode 凭据读取/解密、relay 状态判定、远控 URL 构造
-lib/zcode-bridge.js    ZCode 侧状态聚合与等待逻辑
-lib/writer-locks.js    探测会话是否被其它进程独占（POSIX 用 flock / Windows 用独占打开）
+package.json           Electron 应用清单 + electron-builder 打包配置
+server.mjs             HTTP 服务、路由、SSE 总线
+lib/codex-bridge.mjs   Codex app-server 子进程管理、JSON-RPC、reader/driver 路由
+lib/zcode-creds.mjs    ZCode 凭据读取/解密、relay 状态判定、远控 URL 构造
+lib/zcode-bridge.mjs   ZCode 侧状态聚合与等待逻辑
+lib/writer-locks.mjs   探测会话是否被其它进程独占（POSIX 用 flock / Windows 用独占打开）
 public/index.html      页面骨架（两个 tab）
 public/app.js          前端：会话列表、流式渲染、审批、SSE
 public/markdown.js     零依赖 Markdown 渲染器（含 XSS 过滤）
 public/styles.css      样式（含移动端适配）
+desktop/main.js        Electron 主进程：窗口、托盘、服务进程管理
+desktop/preload.js     IPC 桥（contextIsolation，不暴露 Node API）
+desktop/netif.js       网卡枚举（区分真实网卡与 VPN/隧道）
+desktop/renderer/      控制台界面（index.html / style.css / app.js）
+build/                 应用图标（icon.png / icon.ico）
 run.sh                 Linux 启动入口（控制台 / 服务两种模式）
 run.bat                Windows 启动入口
-console-config.json    控制台保存的配置（server.js 读取为默认值）
 ```
 
 ### 跨平台实现要点
 
 | 关注点 | Linux | Windows |
 |---|---|---|
-| 托盘 | D-Bus SNI（Gio） | Shell_NotifyIcon（ctypes） |
-| 停止服务 | `killpg` 整个进程组（连带 codex 子进程） | `taskkill /T /F` 收整棵进程树 |
-| 子进程隔离 | `start_new_session=True` | `CREATE_NEW_PROCESS_GROUP` |
+| 托盘 | Electron `Tray`（底层 D-Bus SNI） | Electron `Tray`（底层 Shell_NotifyIcon） |
+| 停止服务 | `SIGTERM` 后兜底 `SIGKILL` | `taskkill /T /F` 收整棵进程树 |
 | 写入者锁探测 | `flock -n` | 独占方式打开文件 |
 | codex 探测 | `/usr/lib/chatgpt/resources/codex` 等 | `%LOCALAPPDATA%\Programs\...\codex.exe` 等 |
 | 桌面端进程检测 | `pgrep -f` | `tasklist /FI IMAGENAME` |
 | ZCode 状态目录 | `~/.zcode/v2` | `%USERPROFILE%\.zcode\v2`（同样支持 `ZCODE_HOME`） |
-| 日志位置 | `/tmp/remote-hub.log` | `%TEMP%\remote-hub.log` |
-| 等宽字体 | Monospace | Consolas |
+| 网卡类型判定 | 读 `/sys/class/net/<if>/flags` 内核标志 | 按接口名与地址段推测 |
+| 用户配置目录 | `~/.config/remote-hub/` | `%APPDATA%\remote-hub\` |
 
 
 ## 已知限制

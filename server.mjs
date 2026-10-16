@@ -16,10 +16,10 @@ import { dirname, join, extname, normalize } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { CodexBridge } from './lib/codex-bridge.js';
-import { ZcodeBridge } from './lib/zcode-bridge.js';
-import { buildZcodeRemoteUrl, readZcodePairing } from './lib/zcode-creds.js';
-import { probeHeldLocks } from './lib/writer-locks.js';
+import { CodexBridge } from './lib/codex-bridge.mjs';
+import { ZcodeBridge } from './lib/zcode-bridge.mjs';
+import { buildZcodeRemoteUrl, readZcodePairing } from './lib/zcode-creds.mjs';
+import { probeHeldLocks } from './lib/writer-locks.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, 'public');

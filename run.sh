@@ -1,25 +1,29 @@
 #!/usr/bin/env bash
-# 远程控制网关的启动入口。
+# 远程控制网关启动入口。
 #
-#   ./run.sh            启动控制台（推荐，带窗口 + 托盘）
-#   ./run.sh --server   只启动服务（无界面，等价于旧行为）
-#   ./run.sh start      后台启动服务，不带控制台
+#   ./run.sh            启动图形控制台（推荐）—— 有桌面环境时用这个
+#   ./run.sh start      后台启动服务（无界面，适用于服务器/SSH）
 #   ./run.sh stop       停止后台服务
 #   ./run.sh status     查看状态
+#   ./run.sh --server   前台运行服务（调试用，Ctrl-C 结束）
+#
+# 依赖说明
+#   源码运行需要：Node.js >= 20（服务端）
+#                 Electron（GUI 控制台，通过 npm install 安装）
+#   安装包运行不需要任何额外依赖：deb / exe 已内置 Node 运行时。
 #
 # 默认监听 0.0.0.0（允许局域网访问）。此服务等同于本机 shell 权限，
-# 因此非回环监听时强制要求访问令牌：缺失会自动生成并写入 console-config.json。
+# 因此非回环监听时强制要求访问令牌（缺失会自动生成并写入 console-config.json）。
 # 只想本机访问时用：./run.sh start --host 127.0.0.1
-#
-# 控制台模式下：服务由控制台作为子进程管理，关闭窗口的行为取决于
-# 界面上的「后台运行」开关。
 set -euo pipefail
 cd "$(dirname "$0")"
 
-LOG="${REMOTE_HUB_LOG:-/tmp/remote-hub.log}"
-PIDFILE="${REMOTE_HUB_PID:-/tmp/remote-hub.pid}"
+LOG="${REMOTE_HUB_LOG:-${TMPDIR:-/tmp}/remote-hub.log}"
+PIDFILE="${REMOTE_HUB_PID:-${TMPDIR:-/tmp}/remote-hub.pid}"
+SERVICE="server.mjs"
 
-# ---- 仅服务模式（命令行/无头场景） ----
+# 优先用本地 electron（GUI 控制台）；没有就提示安装
+has_electron() { [[ -x node_modules/.bin/electron ]]; }
 
 pidfile_running() {
   [[ -f "$PIDFILE" ]] || return 1
@@ -30,7 +34,7 @@ pidfile_running() {
 
 svc_start() {
   if pidfile_running; then echo "already running (pid $(cat "$PIDFILE"))"; exit 0; fi
-  setsid nohup node server.js "$@" >>"$LOG" 2>&1 </dev/null &
+  setsid nohup node "$SERVICE" "$@" >>"$LOG" 2>&1 </dev/null &
   echo $! >"$PIDFILE"
   disown || true
   sleep 1
@@ -55,24 +59,30 @@ svc_stop() {
 }
 
 launch_console() {
-  # 控制台自己管理服务子进程；若命令行/后台模式的服务在跑，先停掉避免端口冲突
   if pidfile_running; then
     echo "检测到后台服务在运行，先停止它以便控制台接管…"
     svc_stop
   fi
-  exec python3 console/console.py "$@"
+  if has_electron; then
+    exec node_modules/.bin/electron .
+  fi
+  echo "未找到 Electron（GUI 控制台需要它）。" >&2
+  echo "  安装：npm install" >&2
+  echo "  或改用无界面模式：./run.sh start" >&2
+  echo "  或安装发行包（已内置运行时，无需任何依赖）" >&2
+  exit 1
 }
 
 case "${1:-}" in
-  start)  shift; svc_start "$@" ;;
-  stop)   svc_stop ;;
+  start)   shift; svc_start "$@" ;;
+  stop)    svc_stop ;;
   restart) shift; svc_stop >/dev/null || true; exec "$0" start "$@" ;;
   status)
     if pidfile_running; then
       echo "running (pid $(cat "$PIDFILE"))"
       curl -s -m 5 "http://127.0.0.1:${PORT:-8790}/api/health" || true; echo
     else echo "not running"; exit 1; fi ;;
-  --server) shift; exec node server.js "$@" ;;
+  --server) shift; exec node "$SERVICE" "$@" ;;
   ""|--console) launch_console ;;
-  *) exec node server.js "$@" ;;
+  *) exec node "$SERVICE" "$@" ;;
 esac

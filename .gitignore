@@ -1,12 +1,16 @@
 # 运行时配置：包含访问令牌等本机私有信息，不纳入版本控制
 console-config.json
 
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+
 # 运行时产物
 *.log
 *.pid
-node_modules/
 
-# Python
+# Python（历史遗留：早期控制台实现，现已由 Electron 取代）
 __pycache__/
 *.py[cod]
 *.egg-info/

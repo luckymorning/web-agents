@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;"
+    />
+    <title>远程控制网关</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="brand">远程控制网关</div>
+      <div class="pill" id="pill">
+        <span class="dot" id="dot"></span>
+        <span id="pillText">已停止</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- 服务配置 -->
+      <section class="card">
+        <div class="card-title">服务配置</div>
+        <!-- 每行独立成 flex，避免 grid 因缺列而错位 -->
+        <div class="field">
+          <label for="host">监听地址</label>
+          <select id="host"></select>
+          <button class="btn sm" id="btnRefreshHosts">刷新网卡</button>
+        </div>
+
+        <div class="field">
+          <label for="port">端口</label>
+          <input id="port" type="number" min="1" max="65535" />
+          <span class="spacer"></span>
+        </div>
+
+        <div class="field">
+          <label for="token">访问令牌</label>
+          <input id="token" type="text" />
+          <button class="btn sm" id="btnGenToken">随机生成</button>
+        </div>
+
+        <div class="field">
+          <label for="codexBin">Codex 路径</label>
+          <input id="codexBin" type="text" placeholder="留空自动探测" />
+          <span class="spacer"></span>
+        </div>
+        <div class="hint" id="hostHint"></div>
+      </section>
+
+      <!-- 操作 -->
+      <section class="card row">
+        <div class="hint" id="closeHint"></div>
+        <div class="actions">
+          <button class="btn" id="btnApply">应用配置</button>
+          <button class="btn primary" id="btnStart">启动</button>
+          <button class="btn danger" id="btnStop">停止</button>
+          <button class="btn" id="btnRestart">重启</button>
+        </div>
+      </section>
+
+      <!-- 运行状态 -->
+      <section class="card">
+        <div class="card-title">运行状态</div>
+        <div class="status-line" id="statusText">未运行</div>
+        <div class="hint" id="healthText">点「启动」拉起服务</div>
+        <div class="row spaced">
+          <span class="link" id="urlText"></span>
+          <button class="btn sm" id="btnOpenBrowser">在浏览器打开</button>
+        </div>
+      </section>
+
+      <!-- 日志 -->
+      <section class="card grow">
+        <div class="card-title">服务日志</div>
+        <pre class="log" id="log"></pre>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

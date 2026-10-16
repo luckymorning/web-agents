@@ -1,16 +1,110 @@
 {
   "name": "remote-hub",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "description": "ZCode + Codex 融合的 Web 远程控制网关（零依赖）",
-  "bin": {
-    "remote-hub": "./server.js"
+  "productName": "remote-hub",
+  "version": "1.0.0",
+  "description": "ZCode \u4e0e Codex \u7684\u878d\u5408 Web \u8fdc\u7a0b\u63a7\u5236\u7f51\u5173",
+  "homepage": "https://github.com/luckymorning/web-agents",
+  "author": {
+    "name": "luckymorning",
+    "email": "luckymorning@users.noreply.github.com"
   },
+  "license": "MIT",
+  "main": "desktop/main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron .",
+    "serve": "node server.mjs",
+    "dist:linux": "electron-builder --linux deb",
+    "dist:win": "electron-builder --win portable",
+    "dist:all": "electron-builder --linux deb --win portable"
   },
-  "engines": {
-    "node": ">=20"
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.luckymorning.remotehub",
+    "copyright": "Copyright 2026 luckymorning",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "desktop/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "server.mjs",
+        "to": "app/server.mjs"
+      },
+      {
+        "from": "lib",
+        "to": "app/lib",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "public",
+        "to": "app/public",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon/icon.png"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon/icon.ico"
+      }
+    ],
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Development",
+      "executableName": "remote-hub",
+      "icon": "build/icon.png",
+      "syncDesktopName": true,
+      "synopsis": "ZCode \u4e0e Codex \u7684\u878d\u5408 Web \u8fdc\u7a0b\u63a7\u5236\u7f51\u5173",
+      "description": "\u628a\u672c\u673a ZCode \u4e0e Codex \u7684\u8fdc\u7a0b\u63a7\u5236\u80fd\u529b\u805a\u5408\u5230\u540c\u4e00\u4e2a Web \u9875\u9762\uff0c\u5185\u7f6e\u670d\u52a1\u4e0e\u56fe\u5f62\u63a7\u5236\u53f0\uff0c\u5b89\u88c5\u5373\u7528\u3002",
+      "desktop": {
+        "entry": {
+          "Name": "\u8fdc\u7a0b\u63a7\u5236\u7f51\u5173",
+          "Comment": "ZCode \u4e0e Codex \u7684\u878d\u5408 Web \u8fdc\u7a0b\u63a7\u5236",
+          "Terminal": "false",
+          "Categories": "Development;Utility;",
+          "Keywords": "zcode;codex;remote;ai;"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}",
+      "requestExecutionLevel": "user"
+    }
   }
 }
