@@ -137,7 +137,11 @@ function currentStatus() {
     port: cfg.port,
     token: cfg.token,
     codexBin: cfg.codexBin,
-    closeHint: svcRunning() ? '关闭窗口将最小化到托盘（服务继续运行）' : '关闭窗口将退出程序',
+    closeHint: svcRunning()
+      ? '点「最小化」收到托盘（服务继续运行）'
+      : '点「退出」关闭程序',
+    // 托盘不可用时界面需要改文案 —— 否则「最小化」是个按了没反应（或收不回来）的按钮
+    trayAvailable: Boolean(tray),
   };
 }
 
@@ -291,6 +295,36 @@ function apiGet(cfg, path, timeout = 2500) {
 
 // ---------------------------------------------------------------- 窗口
 
+/**
+ * 最小化到托盘。窗口关闭按钮与界面上的「最小化」按钮共用。
+ * 托盘不可用时**不能**隐藏窗口：否则用户再也没有入口把它找回来。
+ * 返回是否真的收起来了。
+ */
+function minimizeToTray() {
+  if (!tray) return false;
+  if (win && !win.isDestroyed()) win.hide();
+  tray.displayBalloon?.({ title: '远程控制网关', content: '已最小化到托盘，服务继续运行' });
+  return true;
+}
+
+/**
+ * 界面「退出/最小化」按钮的行为，随服务状态切换：
+ *   服务未运行 → 退出程序（没有需要在后台保留的东西）
+ *   服务运行中 → 最小化到托盘（否则退出会把服务一起带走）
+ */
+function exitOrMinimize() {
+  if (!svcRunning()) {
+    quitting = true;
+    // 让 IPC 先把回复发给界面，再走退出流程
+    setImmediate(() => app.quit());
+    return { minimized: false, msg: '正在退出…' };
+  }
+  if (!minimizeToTray()) {
+    return { minimized: false, msg: '系统托盘不可用，窗口保持打开（收起来就找不回来了）' };
+  }
+  return { minimized: true, msg: '已最小化到托盘，服务继续运行' };
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 820,
@@ -300,6 +334,10 @@ function createWindow() {
     title: '远程控制网关 · 控制台',
     backgroundColor: '#0f1115',
     autoHideMenuBar: true,
+    // 隐藏系统默认窗口控制（标题栏的最小化/最大化/关闭）。
+    // 窗口仍可拖动：顶栏在 CSS 里设为 -webkit-app-region: drag；
+    // 关闭/最小化改由界面上的「退出/最小化」按钮承担。
+    frame: false,
     icon: join(__dirname, '..', 'build', 'icon.png'),
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
@@ -310,7 +348,8 @@ function createWindow() {
 
   win.loadFile(join(__dirname, 'renderer', 'index.html'));
 
-  // 关闭按钮：服务未运行 → 退出；服务运行中 → 最小化到托盘
+  // 系统关闭按钮（无边框窗口下已隐藏，保留此处理以防 WM 快捷键触发）：
+  // 服务未运行 → 退出；服务运行中 → 最小化到托盘
   win.on('close', (e) => {
     if (quitting) return;
     if (!svcRunning()) {
@@ -318,8 +357,7 @@ function createWindow() {
       return; // 允许关闭
     }
     e.preventDefault();
-    win.hide();
-    if (tray) tray.displayBalloon?.({ title: '远程控制网关', content: '已最小化到托盘，服务继续运行' });
+    minimizeToTray();
   });
 
   win.on('closed', () => {
@@ -509,10 +547,8 @@ function registerIpc() {
     shell.openExternal(url);
   });
 
-  ipcMain.handle('quit', () => {
-    quitting = true;
-    app.quit();
-  });
+  // 界面「退出/最小化」按钮：文案由界面按服务状态切换，行为由主进程判定
+  ipcMain.handle('exit', () => exitOrMinimize());
 }
 
 // ---------------------------------------------------------------- 生命周期

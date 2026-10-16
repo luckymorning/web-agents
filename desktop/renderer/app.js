@@ -18,6 +18,7 @@ const el = {
   btnApply: $('btnApply'),
   btnStart: $('btnStart'),
   btnStop: $('btnStop'),
+  btnExit: $('btnExit'),
   btnGenToken: $('btnGenToken'),
   btnRefreshHosts: $('btnRefreshHosts'),
   btnOpenBrowser: $('btnOpenBrowser'),
@@ -84,9 +85,20 @@ function renderStatus(st) {
   el.closeHint.textContent = st.closeHint;
   el.urlText.textContent = running ? computeUrl() : '(服务未运行)';
 
-  // 启动/停止互斥；其余按钮始终可用
+  // 启动/停止互斥；退出按钮文案随服务状态切换
   el.btnStart.disabled = running;
   el.btnStop.disabled = !running;
+
+  // 托盘不可用时不能收窗口（收起来就没有入口了），按钮如实说明
+  if (running && st.trayAvailable === false) {
+    el.btnExit.textContent = '最小化';
+    el.btnExit.title = '系统托盘不可用，点击不会收起窗口（可在日志区查看原因）';
+  } else {
+    el.btnExit.textContent = running ? '最小化' : '退出';
+    el.btnExit.title = running
+      ? '最小化到托盘，服务继续运行'
+      : '退出程序（服务未运行）';
+  }
 }
 
 function renderHostOptions(options) {
@@ -193,6 +205,15 @@ async function stop() {
   renderStatus(st);
 }
 
+/**
+ * 退出/最小化：服务未运行则退出应用，运行中则最小化到托盘。
+ * 实际行为由主进程按服务状态判定，界面只负责显示提示。
+ */
+async function exitApp() {
+  const r = await window.hub.exit();
+  if (r && r.msg) toast(r.msg);
+}
+
 // ---------------------------------------------------------------- 事件绑定
 
 function bind() {
@@ -209,6 +230,7 @@ function bind() {
   el.btnApply.addEventListener('click', applyConfig);
   el.btnStart.addEventListener('click', start);
   el.btnStop.addEventListener('click', stop);
+  el.btnExit.addEventListener('click', exitApp);
   el.btnOpenBrowser.addEventListener('click', () => window.hub.openBrowser());
 
   el.btnGenToken.addEventListener('click', async () => {

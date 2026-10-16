@@ -43,6 +43,17 @@ body {
   padding: 12px 18px;
   background: var(--card);
   border-bottom: 1px solid var(--line);
+  /* 无边框窗口没有系统标题栏，顶栏就是唯一的拖动区域 */
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* 顶栏内的可交互元素要排除，否则点击会被当成拖动窗口 */
+.topbar button,
+.topbar input,
+.topbar select,
+.topbar a {
+  -webkit-app-region: no-drag;
 }
 
 .brand {

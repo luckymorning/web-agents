@@ -18,7 +18,8 @@ contextBridge.exposeInMainWorld('hub', {
   start: (form) => ipcRenderer.invoke('start', form),
   stop: () => ipcRenderer.invoke('stop'),
   openBrowser: () => ipcRenderer.invoke('open-browser'),
-  quit: () => ipcRenderer.invoke('quit'),
+  // 退出/最小化：服务未运行则退出应用，运行中则最小化到托盘
+  exit: () => ipcRenderer.invoke('exit'),
 
   // 事件订阅（返回取消订阅函数）
   onStatus: (cb) => {
