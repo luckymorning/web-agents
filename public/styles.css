@@ -64,6 +64,36 @@ body {
   font-size: 14px;
 }
 
+/* 手机端拉出会话列表的按钮：桌面端隐藏（会话列表本来就是常驻侧栏） */
+.topbar-menu {
+  display: none;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  cursor: pointer;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.topbar-menu span {
+  display: block;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fg-dim);
+}
+
+.topbar-menu:active span,
+.topbar-menu[aria-expanded='true'] span {
+  background: var(--fg);
+}
+
 .dot {
   width: 8px;
   height: 8px;
@@ -1122,12 +1152,16 @@ button:disabled {
 .zcode-wrap {
   flex: 1 1 auto;
   min-height: 0;
+  /* min-width 不能省：默认 min-width:auto 会让它被内容的最小宽度撑开，
+     而提示文字是 nowrap，窄屏下会把整个面板顶出视口产生横向滚动 */
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
 
 .zcode-bar {
   flex: 0 0 auto;
+  min-width: 0;
   display: flex;
   gap: 10px;
   align-items: center;
@@ -1150,18 +1184,23 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 配合上面的 overflow，让省略号真正生效而不是被内容宽度顶开 */
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 .zcode-actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .zcode-body {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   background: #0b0d11;
 }
 
@@ -1264,9 +1303,28 @@ button:disabled {
   border-color: rgba(63, 191, 127, 0.5);
 }
 
+/* 抽屉遮罩：仅手机端有意义，桌面端始终不显示 */
+.sidebar-backdrop {
+  display: none;
+}
+
 /* ---------------------------------------------------------------- mobile */
 
 @media (max-width: 760px) {
+  /* 顶栏：给标签页留出空间，避免和菜单按钮/品牌挤在一起 */
+  .topbar {
+    gap: 8px;
+  }
+
+  .topbar-menu {
+    display: flex;
+  }
+
+  .brand strong {
+    display: none;
+  }
+
+  /* 会话列表改为抽屉：默认收起，用顶栏的菜单按钮拉出 */
   .sidebar {
     position: absolute;
     z-index: 20;
@@ -1275,6 +1333,10 @@ button:disabled {
     left: 0;
     width: 84vw;
     max-width: 340px;
+    /* 抽屉本身可滚动，长会话列表才不会被底部截断 */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: env(safe-area-inset-bottom);
     box-shadow: 0 0 32px rgba(0, 0, 0, 0.6);
     transform: translateX(-102%);
     transition: transform 0.2s ease;
@@ -1288,7 +1350,58 @@ button:disabled {
     position: relative;
   }
 
+  .sidebar-backdrop {
+    display: block;
+    position: absolute;
+    z-index: 15;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .sidebar.open ~ .sidebar-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
   .pill {
     display: none;
+  }
+
+  /* 手机上没有悬浮滚动条，触摸滚动更顺手；同时避免收到键盘后输入框被顶飞 */
+  .chat-head {
+    padding: 8px 10px;
+  }
+
+  .composer {
+    padding: 8px 10px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  /* 触屏按钮偏小，放大到易点范围 */
+  .mini {
+    padding: 7px 12px;
+  }
+
+  .tab {
+    padding: 6px 12px;
+  }
+}
+
+/* 横屏手机高度很小，进一步压缩留白，保证消息区和输入框都可见 */
+@media (max-width: 900px) and (max-height: 480px) {
+  .topbar {
+    padding-top: max(4px, env(safe-area-inset-top));
+    padding-bottom: 4px;
+  }
+
+  .chat-head {
+    padding: 6px 10px;
+  }
+
+  .composer-foot {
+    margin-top: 4px;
   }
 }

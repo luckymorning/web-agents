@@ -110,10 +110,27 @@ const els = {
   zcodeHint: $('zcode-hint'),
   zcodeFrame: $('zcode-frame'),
   zcodePlaceholder: $('zcode-placeholder'),
+  btnSidebar: $('btn-sidebar'),
+  sidebar: $('thread-list-wrap'),
+  sidebarBackdrop: $('sidebar-backdrop'),
   toasts: $('toasts'),
 };
 
 // ---------------------------------------------------------------- 工具
+
+/**
+ * 手机端会话列表抽屉的显隐。
+ * 桌面端没有抽屉（侧栏常驻），这里改的类名不会产生任何视觉效果。
+ */
+function setSidebarOpen(open) {
+  if (!els.sidebar) return;
+  els.sidebar.classList.toggle('open', open);
+  els.btnSidebar?.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function toggleSidebar() {
+  setSidebarOpen(!els.sidebar?.classList.contains('open'));
+}
 
 function toast(msg, kind = '') {
   const el = document.createElement('div');
@@ -854,7 +871,8 @@ async function selectThread(threadId, { silent = false } = {}) {
     };
     updateDriverUi();
   }
-  if (!silent) els.sidebar?.classList?.remove('open');
+  // 选中会话后收起抽屉，把空间让给消息区（桌面端无效果）
+  if (!silent) setSidebarOpen(false);
 }
 
 // ---------------------------------------------------------------- 发送
@@ -1464,12 +1482,28 @@ function bindUi() {
       document.querySelectorAll('.pane').forEach((p) => {
         p.classList.toggle('is-active', p.id === `pane-${name}`);
       });
+      // 会话列表只属于 Codex 面板；切到 ZCode 时隐藏菜单按钮并收起抽屉，
+      // 否则按钮会去开一个已经不显示的面板里的抽屉。
+      if (els.btnSidebar) els.btnSidebar.hidden = name !== 'codex';
+      setSidebarOpen(false);
       if (name === 'zcode') refreshZcode();
     });
   });
 
   els.btnMore.addEventListener('click', () => loadThreads({ append: true }).catch((e) => toast(e.message, 'err')));
   els.threadSearch.addEventListener('input', renderThreadList);
+
+  // 手机端：顶栏按钮拉出/收起会话列表抽屉，点遮罩或按 Esc 收起
+  els.btnSidebar?.addEventListener('click', toggleSidebar);
+  els.sidebarBackdrop?.addEventListener('click', () => setSidebarOpen(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setSidebarOpen(false);
+  });
+  // 旋转屏幕/拉宽窗口后抽屉已无意义（侧栏常驻），清掉状态避免残留遮罩
+  const narrow = window.matchMedia('(max-width: 760px)');
+  narrow.addEventListener('change', (e) => {
+    if (!e.matches) setSidebarOpen(false);
+  });
 
   // 代码块「复制」按钮（用事件委托，避免给每个块单独绑定）
   els.stream.addEventListener('click', async (e) => {

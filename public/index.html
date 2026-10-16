@@ -10,6 +10,17 @@
   </head>
   <body>
     <header class="topbar">
+      <!-- 手机端用来拉出会话列表抽屉；桌面端由 CSS 隐藏 -->
+      <button
+        class="topbar-menu"
+        id="btn-sidebar"
+        type="button"
+        aria-label="会话列表"
+        aria-expanded="false"
+        aria-controls="thread-list-wrap"
+      >
+        <span></span><span></span><span></span>
+      </button>
       <div class="brand">
         <span class="dot" id="conn-dot"></span>
         <strong>远程控制</strong>
@@ -48,6 +59,10 @@
           <button id="btn-more" class="mini wide">加载更多</button>
         </div>
       </aside>
+
+      <!-- 手机端抽屉打开时的遮罩：点它收起会话列表。
+           紧邻 .sidebar，用 CSS 兄弟选择器跟随其 .open 状态显隐。 -->
+      <div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
 
       <section class="chat">
         <div class="chat-head" id="chat-head">
