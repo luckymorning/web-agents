@@ -18,7 +18,6 @@ const el = {
   btnApply: $('btnApply'),
   btnStart: $('btnStart'),
   btnStop: $('btnStop'),
-  btnRestart: $('btnRestart'),
   btnGenToken: $('btnGenToken'),
   btnRefreshHosts: $('btnRefreshHosts'),
   btnOpenBrowser: $('btnOpenBrowser'),
@@ -143,35 +142,47 @@ async function loadInitial() {
   scheduleHealth();
 }
 
-async function applyConfig() {
-  const form = {
+/** 读取界面上的配置表单。 */
+function readForm() {
+  return {
     host: currentHostValue(),
     port: Number(el.port.value.trim()),
     token: el.token.value.trim(),
     codexBin: el.codexBin.value.trim(),
   };
-  const r = await window.hub.applyConfig(form);
-  toast(r.msg || (r.ok ? '配置已保存' : '配置保存失败'));
-  if (r.config) {
-    // 令牌可能被自动生成，回填到输入框让用户能看到
-    await refreshHosts(r.config.host);
-    el.port.value = r.config.port;
-    el.token.value = r.config.token;
-    if (r.generated) {
-      toast('已自动生成访问令牌（非本机监听必须设置），请妥善保存');
-    }
+}
+
+/** 把主进程返回的配置回填到界面（令牌可能被自动生成）。 */
+async function fillForm(cfg, generated) {
+  if (!cfg) return;
+  await refreshHosts(cfg.host);
+  el.port.value = cfg.port;
+  el.token.value = cfg.token;
+  if (generated) {
+    toast('已自动生成访问令牌（非本机监听必须设置），请妥善保存');
   }
+}
+
+async function applyConfig() {
+  const r = await window.hub.applyConfig(readForm());
+  toast(r.msg || (r.ok ? '配置已保存' : '配置保存失败'));
+  await fillForm(r.config, r.generated);
   const st = await window.hub.getStatus();
   renderStatus(st);
 }
 
 async function start() {
   el.btnStart.disabled = true;
-  const r = await window.hub.start();
-  toast(r.msg);
-  const st = await window.hub.getStatus();
-  renderStatus(st);
-  refreshHealth();
+  try {
+    // 启动会先应用界面上的配置，无需先点「应用配置」
+    const r = await window.hub.start(readForm());
+    toast(r.msg);
+    await fillForm(r.config, r.generated);
+  } finally {
+    const st = await window.hub.getStatus();
+    renderStatus(st);
+    refreshHealth();
+  }
 }
 
 async function stop() {
@@ -180,19 +191,6 @@ async function stop() {
   toast(r.msg);
   const st = await window.hub.getStatus();
   renderStatus(st);
-}
-
-async function restart() {
-  el.btnRestart.disabled = true;
-  try {
-    const r = await window.hub.restart();
-    toast(r.msg);
-    const st = await window.hub.getStatus();
-    renderStatus(st);
-    refreshHealth();
-  } finally {
-    el.btnRestart.disabled = false;
-  }
 }
 
 // ---------------------------------------------------------------- 事件绑定
@@ -211,7 +209,6 @@ function bind() {
   el.btnApply.addEventListener('click', applyConfig);
   el.btnStart.addEventListener('click', start);
   el.btnStop.addEventListener('click', stop);
-  el.btnRestart.addEventListener('click', restart);
   el.btnOpenBrowser.addEventListener('click', () => window.hub.openBrowser());
 
   el.btnGenToken.addEventListener('click', async () => {

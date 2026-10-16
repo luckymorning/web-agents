@@ -78,6 +78,34 @@ function genToken() {
   return require('node:crypto').randomBytes(24).toString('base64url');
 }
 
+/**
+ * 校验界面提交的配置并落盘。
+ * 「启动」与「应用配置」共用，避免两处各写一套校验。
+ */
+function persistConfig(form) {
+  const next = {
+    host: String((form && form.host) || '127.0.0.1'),
+    port: Number(form && form.port),
+    token: String((form && form.token) || ''),
+    codexBin: String((form && form.codexBin) || ''),
+  };
+  if (!Number.isInteger(next.port) || next.port < 1 || next.port > 65535) {
+    return { ok: false, msg: '端口需在 1-65535 之间' };
+  }
+
+  // 非回环监听且无令牌 → 自动生成，避免把 shell 权限裸暴露到局域网
+  let generated = false;
+  if (!isLoopbackHost(next.host) && !next.token) {
+    next.token = genToken();
+    generated = true;
+  }
+
+  const prev = readConfig();
+  const changed = Object.keys(next).filter((k) => prev[k] !== next[k]);
+  if (!writeConfig(next)) return { ok: false, msg: '配置写入失败' };
+  return { ok: true, changed, generated, config: next };
+}
+
 // ---------------------------------------------------------------- 状态
 
 let win = null;
@@ -391,26 +419,10 @@ function registerIpc() {
   ipcMain.handle('gen-token', () => genToken());
 
   ipcMain.handle('apply-config', async (_e, form) => {
-    const cfg = readConfig();
-    const next = {
-      host: String(form.host || '127.0.0.1'),
-      port: Number(form.port),
-      token: String(form.token || ''),
-      codexBin: String(form.codexBin || ''),
-    };
-    if (!Number.isInteger(next.port) || next.port < 1 || next.port > 65535) {
-      return { ok: false, msg: '端口需在 1-65535 之间' };
-    }
+    const saved = persistConfig(form);
+    if (!saved.ok) return saved;
 
-    // 非回环监听且无令牌 → 自动生成，避免把 shell 权限裸暴露到局域网
-    let generated = false;
-    if (!isLoopbackHost(next.host) && !next.token) {
-      next.token = genToken();
-      generated = true;
-    }
-
-    const changed = Object.keys(next).filter((k) => cfg[k] !== next[k]);
-    if (!writeConfig(next)) return { ok: false, msg: '配置写入失败' };
+    const { changed, generated, config: next } = saved;
     if (!changed.length) return { ok: true, msg: '配置未变化', generated, config: next };
 
     const detail = changed.join('、');
@@ -446,20 +458,36 @@ function registerIpc() {
     };
   });
 
-  ipcMain.handle('start', async () => {
-    const r = startService(readConfig());
+  // 启动即应用界面上的配置，用户不必先点「应用配置」
+  ipcMain.handle('start', async (_e, form) => {
+    const saved = persistConfig(form);
+    if (!saved.ok) return saved;
+
+    const { changed, generated, config: next } = saved;
+
+    if (svcRunning()) {
+      // 界面在运行时会禁用「启动」，这里只做兜底：
+      // 配置有变化就重启一次，保证「服务状态」与「界面所填」始终一致。
+      if (!changed.length) {
+        return { ok: true, msg: '服务已在运行', generated, config: next };
+      }
+      const r = await restartService(next);
+      broadcastStatus();
+      return {
+        ok: r.ok,
+        msg: r.ok ? `配置已更新（${changed.join('、')}）；服务已重启` : r.msg,
+        generated,
+        config: next,
+      };
+    }
+
+    const r = startService(next);
     broadcastStatus();
-    return r;
+    return { ...r, generated, config: next };
   });
 
   ipcMain.handle('stop', async () => {
     const r = await stopService();
-    broadcastStatus();
-    return r;
-  });
-
-  ipcMain.handle('restart', async () => {
-    const r = await restartService(readConfig());
     broadcastStatus();
     return r;
   });

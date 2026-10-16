@@ -14,9 +14,9 @@ contextBridge.exposeInMainWorld('hub', {
 
   // 操作
   applyConfig: (form) => ipcRenderer.invoke('apply-config', form),
-  start: () => ipcRenderer.invoke('start'),
+  // 启动会先保存界面上的配置再拉起服务
+  start: (form) => ipcRenderer.invoke('start', form),
   stop: () => ipcRenderer.invoke('stop'),
-  restart: () => ipcRenderer.invoke('restart'),
   openBrowser: () => ipcRenderer.invoke('open-browser'),
   quit: () => ipcRenderer.invoke('quit'),
 
