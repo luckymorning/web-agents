@@ -527,7 +527,9 @@ async function handleApi(req, res, url) {
   if (pathname === '/api/codex/open' && method === 'POST') {
     const body = await readBody(req);
     if (!body.threadId) return sendJson(res, 400, { ok: false, error: 'threadId required' });
-    const r = await codex.openDriver(body.threadId, { model: body.model || null });
+    const r = await codex.openDriver(body.threadId, {
+      model: body.model || null, permissionMode: body.permissionMode,
+    });
     return sendJson(res, 200, { ok: r.mode === 'driver', ...r });
   }
 
@@ -542,29 +544,11 @@ async function handleApi(req, res, url) {
     if (!threadId || typeof text !== 'string') {
       return sendJson(res, 400, { ok: false, error: 'threadId and text are required' });
     }
-    if (codex.driverThreadId !== threadId || !codex.driver?.alive) {
-      const opened = await codex.openDriver(threadId, { model: body.model || null });
-      if (opened.mode !== 'driver') {
-        return sendJson(res, 409, { ok: false, ...opened });
-      }
-    }
-    const input = [{ type: kind, text }];
-    const activeTurn = codex.activeTurns.get(threadId);
-    if (activeTurn) {
-      // 正在跑：用 steer 把新内容插进当前 turn，而不是再开一个。
-      const r = await codex.driver.call(
-        'turn/steer',
-        { threadId, expectedTurnId: activeTurn, input },
-        { timeoutMs: 45000 },
-      );
-      return sendJson(res, 200, { ok: true, steered: true, turnId: activeTurn, ...r });
-    }
-    const params = { threadId, input };
-    if (body.model) params.model = body.model;
-    if (body.effort) params.effort = body.effort;
-    const r = await codex.driver.call('turn/start', params, { timeoutMs: 60000 });
-    if (r?.turn?.id) codex.activeTurns.set(threadId, r.turn.id);
-    return sendJson(res, 200, { ok: true, steered: false, ...r });
+    const r = await codex.sendMessage({
+      threadId, text, kind, model: body.model, effort: body.effort,
+      permissionMode: body.permissionMode,
+    });
+    return sendJson(res, r.ok ? 200 : 409, r);
   }
 
   if (pathname === '/api/codex/interrupt' && method === 'POST') {
@@ -587,6 +571,7 @@ async function handleApi(req, res, url) {
       model: body.model || null,
       approvalPolicy: body.approvalPolicy || 'on-request',
       sandbox: body.sandbox || 'workspace-write',
+      permissionMode: body.permissionMode,
       ephemeral: Boolean(body.ephemeral),
       projectId: body.projectId || null,
     });
@@ -661,7 +646,7 @@ const server = http.createServer(async (req, res) => {
       return await handleApi(req, res, url);
     } catch (err) {
       log('api error:', err?.message || String(err));
-      return sendJson(res, 500, {
+      return sendJson(res, err.statusCode || 500, {
         ok: false,
         error: err?.message || String(err),
         reasonCode: err?.reasonCode || err?.code || null,

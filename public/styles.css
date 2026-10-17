@@ -305,6 +305,10 @@ body {
   width: 100%;
 }
 
+.newthread label[for="newthread-permission"] {
+  margin-top: 8px;
+}
+
 .newthread input[hidden] + .newthread-actions,
 .newthread select + input {
   margin-top: 6px;
@@ -1067,10 +1071,37 @@ textarea:disabled {
 
 .composer-foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   margin-top: 8px;
   font-size: 11px;
+}
+
+.composer-foot > select {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.permission-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.permission-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.permission-hint.full-access {
+  color: var(--warn);
+}
+
+select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .pending {

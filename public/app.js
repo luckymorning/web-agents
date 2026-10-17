@@ -58,6 +58,8 @@ const state = {
   driver: { mode: 'none', threadId: null, activeTurnId: null, reason: null },
   models: [],
   model: null,
+  permissionModes: new Map(),
+  sendingThreadId: null,
   // item 渲染索引：itemId -> DOM 节点
   nodes: new Map(),
   // 当前 turn 的流式目标：turnId -> { agentItemId, agentEl }
@@ -98,6 +100,8 @@ const els = {
   newthreadWrap: $('newthread'),
   newthreadDir: $('newthread-dir'),
   newthreadCwd: $('newthread-cwd'),
+  newthreadPermission: $('newthread-permission'),
+  newthreadPermissionHint: $('newthread-permission-hint'),
   btnNewThreadCreate: $('btn-newthread-create'),
   stream: $('stream'),
   streamEmpty: $('stream-empty'),
@@ -105,6 +109,8 @@ const els = {
   input: $('input'),
   btnSend: $('btn-send'),
   modelSelect: $('model-select'),
+  permissionSelect: $('permission-select'),
+  permissionHint: $('permission-hint'),
   sendHint: $('send-hint'),
   zcodeBadge: $('zcode-badge'),
   zcodeHint: $('zcode-hint'),
@@ -117,6 +123,45 @@ const els = {
 };
 
 // ---------------------------------------------------------------- 工具
+
+const PERMISSION_DESCRIPTIONS = {
+  inherit: '沿用会话已有的权限设置',
+  'read-only': '只读文件，不允许写入或联网，也不申请提权',
+  'workspace-write': '允许修改工作区；联网或工作区外操作需按需审批',
+  'full-access': '允许访问全部文件和网络，执行操作无需审批',
+};
+
+function permissionModeFor(threadId) {
+  if (!threadId) return 'inherit';
+  if (state.permissionModes.has(threadId)) return state.permissionModes.get(threadId);
+  let mode;
+  try { mode = localStorage.getItem(`codex-permission:${threadId}`); } catch { /* 禁用存储时使用内存 */ }
+  return Object.hasOwn(PERMISSION_DESCRIPTIONS, mode) ? mode : 'inherit';
+}
+
+function rememberPermissionMode(threadId, mode) {
+  state.permissionModes.set(threadId, mode);
+  try { localStorage.setItem(`codex-permission:${threadId}`, mode); } catch { /* 不影响当前页面切换 */ }
+}
+
+function updatePermissionUi() {
+  const mode = permissionModeFor(state.activeThreadId);
+  const locked = state.driver.threadId === state.activeThreadId && state.driver.mode === 'locked';
+  const selected = state.activeThread?.id === state.activeThreadId && Boolean(state.activeThreadId);
+  els.permissionSelect.value = mode;
+  els.permissionSelect.disabled = !selected || locked || Boolean(state.sendingThreadId);
+  els.permissionHint.classList.toggle('full-access', mode === 'full-access');
+  els.permissionHint.textContent = !selected ? '选择会话后可设置权限' : locked
+    ? '该会话被桌面端占用，请在桌面端修改权限'
+    : mode === 'inherit' ? PERMISSION_DESCRIPTIONS[mode]
+      : `${PERMISSION_DESCRIPTIONS[mode]}。下一轮发送时生效；运行中追加消息沿用当前轮次权限。`;
+}
+
+function updateNewThreadPermissionUi() {
+  const mode = els.newthreadPermission.value;
+  els.newthreadPermissionHint.textContent = PERMISSION_DESCRIPTIONS[mode];
+  els.newthreadPermissionHint.classList.toggle('full-access', mode === 'full-access');
+}
 
 /**
  * 手机端会话列表抽屉的显隐。
@@ -817,10 +862,13 @@ function renderItem(item, entry) {
 
 async function selectThread(threadId, { silent = false } = {}) {
   state.activeThreadId = threadId;
+  state.activeThread = null;
+  updatePermissionUi();
   renderThreadList();
   resetStream();
 
   const data = await api(`/codex/thread?threadId=${encodeURIComponent(threadId)}`);
+  if (state.activeThreadId !== threadId) return;
   const thread = data.thread;
   state.activeThread = thread;
   els.threadTitle.textContent = titleOf(thread);
@@ -831,12 +879,17 @@ async function selectThread(threadId, { silent = false } = {}) {
   els.streamEmpty.hidden = true;
   // 浏览是只读的：不主动抢占写入权，等到第一次发送时才尝试接管。
   // 但如果这个线程正是当前 driver 持有的，就保留驱动状态（例如新建后立刻打开）。
-  if (state.driver.threadId !== threadId || state.driver.mode !== 'driver') {
+  if (data.locked) {
+    state.driver = { mode: 'locked', threadId, activeTurnId: null, reason: '该会话正被桌面客户端占用' };
+  } else if (data.driver?.alive && data.driver.threadId === threadId) {
+    state.driver = { mode: 'driver', ...data.driver };
+  } else if (state.driver.threadId !== threadId || state.driver.mode !== 'driver') {
     state.driver = { mode: 'none', threadId, activeTurnId: null, reason: null };
   }
   updateDriverUi();
 
   const items = await api(`/codex/items?threadId=${encodeURIComponent(threadId)}&limit=120`);
+  if (state.activeThreadId !== threadId) return;
   const entries = items.data || [];
   if (!entries.length) {
     addMsg('sys', '（无历史消息）');
@@ -903,7 +956,9 @@ function applyDriverFailure(payload, threadId) {
 
 async function send() {
   const text = els.input.value.trim();
-  if (!text || !state.activeThreadId) return;
+  const threadId = state.activeThreadId;
+  if (!text || !threadId || state.sendingThreadId || state.activeThread?.id !== threadId) return;
+  const permissionMode = permissionModeFor(threadId);
 
   // 已知被占用时不必走一遍"发送→失败"，直接说明该去哪处理
   if (state.driver.mode === 'locked' && state.driver.threadId === state.activeThreadId) {
@@ -912,7 +967,8 @@ async function send() {
   }
 
   els.input.value = '';
-  els.btnSend.disabled = true;
+  state.sendingThreadId = threadId;
+  updateDriverUi();
 
   // 乐观回显：先插一条本地节点，等 app-server 回传真实的 userMessage item 时再撤掉，
   // 否则会出现“自己发的消息显示两遍”。
@@ -925,21 +981,24 @@ async function send() {
   try {
     const r = await api('/codex/send', {
       method: 'POST',
-      body: { threadId: state.activeThreadId, text, model: state.model },
+      body: { threadId, text, model: state.model, permissionMode },
       timeoutMs: 90000,
     });
     el.querySelector('.who').textContent = '你';
-    state.driver.mode = 'driver';
-    if (r.turnId) state.driver.activeTurnId = r.turnId;
-    updateDriverUi();
+    if (state.activeThreadId === threadId) {
+      state.driver = { mode: 'driver', threadId, activeTurnId: r.turnId || null, reason: null };
+      updateDriverUi();
+      if (r.permissionDeferred) toast('消息已追加；所选权限将在下一轮发送时生效');
+    }
   } catch (err) {
     state.pendingUser = state.pendingUser.filter((p) => p.el !== el);
     el.querySelector('.who').textContent = '你 · 失败';
     const payload = err.payload || {};
-    if (!applyDriverFailure(payload, state.activeThreadId)) {
+    if (state.activeThreadId !== threadId || !applyDriverFailure(payload, threadId)) {
       toast(err.message, 'err');
     }
   } finally {
+    state.sendingThreadId = null;
     // 该会话可能在此过程中被判定为被占用，交给 updateDriverUi 决定按钮是否可用
     updateDriverUi();
     if (!els.input.disabled) els.input.focus();
@@ -1020,7 +1079,8 @@ function updateDriverUi() {
       ? '该会话被桌面端占用，请到桌面端发送消息与审批'
       : '输入消息…（Enter 发送，Shift+Enter 换行）';
   }
-  if (els.btnSend) els.btnSend.disabled = isLocked;
+  if (els.btnSend) els.btnSend.disabled = isLocked || Boolean(state.sendingThreadId);
+  updatePermissionUi();
 
   els.sendHint.textContent = isLocked
     ? '需在桌面端处理'
@@ -1534,6 +1594,14 @@ function bindUi() {
   els.btnSend.addEventListener('click', send);
   els.btnInterrupt.addEventListener('click', interrupt);
   els.btnRelease.addEventListener('click', releaseDriver);
+  els.permissionSelect.addEventListener('change', () => {
+    if (!state.activeThreadId || els.permissionSelect.disabled) return;
+    rememberPermissionMode(state.activeThreadId, els.permissionSelect.value);
+    updatePermissionUi();
+  });
+  els.newthreadPermission.addEventListener('change', updateNewThreadPermissionUi);
+  updateNewThreadPermissionUi();
+  updatePermissionUi();
   els.input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
       e.preventDefault();
@@ -1565,6 +1633,7 @@ function bindUi() {
     const useDefault = sel.value === '__default__';
     const cwd = useCustom ? els.newthreadCwd.value.trim() : useDefault ? '' : sel.value;
     const projectId = useCustom || useDefault ? null : sel.selectedOptions?.[0]?.dataset?.projectId || null;
+    const permissionMode = els.newthreadPermission.value;
 
     if (useCustom && !cwd) {
       toast('请填写自定义目录路径', 'err');
@@ -1577,11 +1646,13 @@ function bindUi() {
     try {
       const r = await api('/codex/new-thread', {
         method: 'POST',
-        body: { cwd: cwd || undefined, model: state.model || undefined, projectId: projectId || undefined },
+        body: { cwd: cwd || undefined, model: state.model || undefined, projectId: projectId || undefined,
+          permissionMode },
         timeoutMs: 90000,
       });
       const id = r.thread?.id;
       if (id) {
+        rememberPermissionMode(id, permissionMode);
         state.driver = { mode: 'driver', threadId: id, activeTurnId: null, reason: null };
         newWrap.hidden = true;
         els.newthreadCwd.value = '';

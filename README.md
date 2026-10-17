@@ -295,6 +295,26 @@ run.sh / run.bat       源码运行入口（控制台 / 服务两种模式）
   `item/fileChange/requestApproval`、`item/tool/requestUserInput` 等请求会转成页面上的
   按钮，点击即以同一 JSON-RPC id 应答
 
+#### 会话权限模式
+
+输入框下方的「权限」可为当前会话选择权限模式；新建会话表单也支持选择，默认使用「默认权限」。
+
+| 模式 | 行为 |
+|---|---|
+| 沿用会话设置 | 不覆盖已有权限（浏览已有会话时的初始选项） |
+| 只读 | 只读文件，不写入、不联网、不申请提权 |
+| 默认权限 | 工作区可写；联网或工作区外操作按需审批 |
+| 完全访问 | 全部文件和网络可访问，执行操作无需审批 |
+
+选择按会话保存在当前浏览器中，刷新后保留，不会带到其它会话。切换在**下一轮发送时生效**；
+运行中发送的消息通过 `turn/steer` 插入，仍使用当前轮次的权限。被桌面端占用的会话需在桌面端修改权限。
+
+`/api/codex/new-thread`、`/api/codex/open` 和 `/api/codex/send` 接受可选的 `permissionMode`：
+`inherit`、`read-only`、`workspace-write`、`full-access`。新建/接管时映射为 `approvalPolicy` + `sandbox`，
+新一轮发送时映射为 `approvalPolicy` + `sandboxPolicy`；省略参数保持原有行为。运行中发送若携带预设，
+响应的 `permissionDeferred: true` 表示本次追加不修改权限，调用方需在下一轮发送时再次携带该预设。
+`open` 已持有目标会话时不会修改配置，需通过下一次 `send` 应用权限。
+
 #### 会话按项目 / 目录分组
 
 列表按 Codex 原生项目（桌面端创建的「项目」）分组，组头可折叠，显示组内会话数。

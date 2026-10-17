@@ -49,6 +49,13 @@
           <label for="newthread-dir">工作目录</label>
           <select id="newthread-dir"></select>
           <input id="newthread-cwd" type="text" placeholder="/path/to/project" autocomplete="off" hidden />
+          <label for="newthread-permission">权限模式</label>
+          <select id="newthread-permission" aria-describedby="newthread-permission-hint">
+            <option value="read-only">只读</option>
+            <option value="workspace-write" selected>默认权限</option>
+            <option value="full-access">完全访问</option>
+          </select>
+          <p class="dim permission-hint" id="newthread-permission-hint"></p>
           <div class="newthread-actions">
             <button id="btn-newthread-create" class="mini">创建</button>
             <button id="btn-newthread-cancel" class="mini">取消</button>
@@ -92,8 +99,17 @@
           </div>
           <div class="composer-foot">
             <select id="model-select" title="模型"></select>
+            <label class="permission-control" for="permission-select">权限
+              <select id="permission-select" aria-describedby="permission-hint" disabled>
+                <option value="inherit">沿用会话设置</option>
+                <option value="read-only">只读</option>
+                <option value="workspace-write">默认权限</option>
+                <option value="full-access">完全访问</option>
+              </select>
+            </label>
             <span class="dim" id="send-hint"></span>
           </div>
+          <p class="dim permission-hint" id="permission-hint" role="status"></p>
         </div>
       </section>
     </main>

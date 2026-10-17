@@ -11,6 +11,7 @@
   "license": "MIT",
   "main": "desktop/main.js",
   "scripts": {
+    "test": "node --test",
     "start": "electron .",
     "serve": "node server.mjs",
     "dist:linux": "electron-builder --linux deb",
